@@ -1,0 +1,11 @@
+[package]
+name = "nanonis"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+itertools = "0.10.5"
+serde = { version = "1.0.150", features = ["derive"] }
+thiserror = "1.0.37"
