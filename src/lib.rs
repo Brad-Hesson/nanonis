@@ -1,27 +1,28 @@
-use std::fs::read;
-use std::io::BufRead;
-use std::num::ParseFloatError;
 use std::{
     collections::BTreeMap,
     fs::File,
-    io::{BufReader, Read},
+    io::{BufRead, BufReader, Write},
+    num::ParseFloatError,
     path::Path,
 };
 
 use itertools::{izip, Itertools};
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct DatFile {
     pub attributes: BTreeMap<String, String>,
     pub signals: BTreeMap<String, Vec<f64>>,
 }
 impl DatFile {
     pub fn read_from_file(path: impl AsRef<Path>) -> Result<Self, ReadError> {
+        let reader = BufReader::new(File::open(path).unwrap());
+        Self::read_from(reader)
+    }
+    pub fn read_from(reader: impl BufRead) -> Result<Self, ReadError> {
         let mut self_ = Self {
             attributes: BTreeMap::new(),
             signals: BTreeMap::new(),
         };
-        let reader = BufReader::new(File::open(path)?);
         let mut lines = reader
             .lines()
             .filter_map(|v| v.ok())
@@ -39,16 +40,40 @@ impl DatFile {
             .unwrap()
             .split('\t')
             .map(str::trim)
+            .filter(|h| !h.is_empty())
             .map(str::to_string)
             .collect_vec();
         let mut signals = vec![vec![]; headers.len()];
         for line in &mut lines {
-            for (i, value) in line.split('\t').enumerate() {
+            for (i, value) in line.split('\t').enumerate().take(headers.len()) {
                 signals[i].push(value.trim().parse()?);
             }
         }
         self_.signals.extend(izip!(headers, signals));
         Ok(self_)
+    }
+    pub fn write_to(&self, mut writer: impl Write) -> Result<(), std::io::Error> {
+        for (key, value) in self.attributes.iter() {
+            writeln!(writer, "{key}\t{value}")?;
+        }
+        writeln!(writer)?;
+        writeln!(writer, "[DATA]")?;
+        for header in self.signals.keys() {
+            write!(writer, "{header}\t")?;
+        }
+        writeln!(writer)?;
+        let mut signals = self
+            .signals
+            .values()
+            .map(|v| v.iter().peekable())
+            .collect_vec();
+        while signals[0].peek().is_some() {
+            for it in signals.iter_mut() {
+                write!(writer, "{}\t", it.next().unwrap())?;
+            }
+            writeln!(writer)?;
+        }
+        Ok(())
     }
 }
 
@@ -62,15 +87,22 @@ pub enum ReadError {
     EmptyAttr(String),
 }
 
-#[test]
-fn feature() {
-    let path = r#"C:\Users\Brad\Desktop\test.dat"#;
-    let res = DatFile::read_from_file(path);
-    match res {
-        Ok(df) => {
-            println!("{:#?}", df.attributes);
-            println!("{:#?}", df.signals.keys());
-        }
-        Err(e) => println!("{e}"),
+#[cfg(test)]
+mod tests {
+    use std::io::BufWriter;
+
+    use super::*;
+
+    #[test]
+    fn round_trip() {
+        let path = r#"C:\Users\Brad\Desktop\code\actuator-project\data\ln-stack\0011\aquisitions\trap_80s_400v_100p_0o_002.dat"#;
+        let df = DatFile::read_from_file(path).unwrap();
+        println!("{:#?}", df.attributes);
+        println!("{:#?}", df.signals.keys());
+        let path2 = r#"C:\Users\Brad\Desktop\test2.dat"#;
+        df.write_to(BufWriter::new(File::create(path2).unwrap()))
+            .unwrap();
+        let df2 = DatFile::read_from_file(path2).unwrap();
+        assert_eq!(df, df2);
     }
 }
