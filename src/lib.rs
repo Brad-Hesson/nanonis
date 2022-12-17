@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs::File,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, BufWriter, Write},
     num::ParseFloatError,
     path::Path,
 };
@@ -51,6 +51,11 @@ impl DatFile {
         }
         self_.signals.extend(izip!(headers, signals));
         Ok(self_)
+    }
+    pub fn write_to_file(&self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        let writer = BufWriter::new(File::create(path)?);
+        Self::write_to(&self, writer)?;
+        Ok(())
     }
     pub fn write_to(&self, mut writer: impl Write) -> Result<(), std::io::Error> {
         for (key, value) in self.attributes.iter() {
